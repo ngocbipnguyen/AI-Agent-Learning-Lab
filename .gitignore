@@ -1,0 +1,40 @@
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Environment variables - protect API keys
+.env
+.env.*
+!.env.example
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE and editor
+.vscode/
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Local database files
+*.db
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.bak
