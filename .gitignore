@@ -38,3 +38,5 @@ Desktop.ini
 # Temporary files
 *.tmp
 *.bak
+# Persistent Memory - local conversation data
+memory.json
