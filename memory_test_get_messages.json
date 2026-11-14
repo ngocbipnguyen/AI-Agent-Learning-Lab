@@ -1,0 +1,10 @@
+[
+    {
+        "role": "user",
+        "content": "Tôi đang học Python."
+    },
+    {
+        "role": "assistant",
+        "content": "Chúng ta đang học Memory."
+    }
+]

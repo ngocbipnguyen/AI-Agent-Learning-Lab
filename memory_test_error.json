@@ -1,0 +1,9 @@
+[
+    {
+        "role": "user",
+        "content": "Xin chào"
+    },
+    {
+        "invalid": "data"
+    }
+]

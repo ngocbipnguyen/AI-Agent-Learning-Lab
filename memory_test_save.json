@@ -1,0 +1,10 @@
+[
+    {
+        "role": "user",
+        "content": "Xin chào! Tôi đang học AI Agent."
+    },
+    {
+        "role": "assistant",
+        "content": "Chào bạn! Chúng ta cùng học Python nhé."
+    }
+]

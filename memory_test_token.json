@@ -1,0 +1,6 @@
+[
+    {
+        "role": "user",
+        "content": "Đây là một tin nhắn rất dài nhằm kiểm tra chức năng giới hạn Token của hệ thống Memory."
+    }
+]
