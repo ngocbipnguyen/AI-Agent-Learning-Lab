@@ -23,13 +23,14 @@ async def researcher(queue, researcher_id):
 async def producer(queue):
     for news in news_list:
         print(f"Producer: Đã thu thập {news}")
-        await queue.put(news)
+        await news_queue.put(news)
 
         await asyncio.sleep(0.5)
 
 
 async def main():
-    queue = asyncio.Queue()
+    news_queue = asyncio.Queue()
+    result_queue = asyncio.Queue()
 
     # Tạo Producer
     producer_task = asyncio.create_task(producer(queue))
