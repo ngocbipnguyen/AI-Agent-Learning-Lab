@@ -1,13 +1,23 @@
 
 import chromadb
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
 
-# Tạo Persistent Client
-client = chromadb.PersistentClient(
+load_dotenv(override=True)
+
+# OpenAI Client
+openai_client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
+
+# ChromaDB Client
+chroma_client = chromadb.PersistentClient(
     path="./chunking_db"
 )
 
-# Tạo Collection riêng cho các chunks
-collection = client.get_or_create_collection(
+# Collection
+collection = chroma_client.get_or_create_collection(
     name="technology_chunks"
 )
 
@@ -64,27 +74,27 @@ metadatas=[
     }
 ]
 
-# collection.upsert(
-#     ids=["chunk_1", "chunk_2", "chunk_3"],
-#     documents=chunks,
-#     metadatas=[
-#         {
-#             "source": "technology_news.txt",
-#             "chunk_index": 0,
-#             "category": "AI"
-#         },
-#         {
-#             "source": "technology_news.txt",
-#             "chunk_index": 1,
-#             "category": "AI"
-#         },
-#         {
-#             "source": "technology_news.txt",
-#             "chunk_index": 2,
-#             "category": "AI"
-#         }
-#     ]
-# )
+collection.upsert(
+    ids=["chunk_1", "chunk_2", "chunk_3"],
+    documents=chunks,
+    metadatas=[
+        {
+            "source": "technology_news.txt",
+            "chunk_index": 0,
+            "category": "AI"
+        },
+        {
+            "source": "technology_news.txt",
+            "chunk_index": 1,
+            "category": "AI"
+        },
+        {
+            "source": "technology_news.txt",
+            "chunk_index": 2,
+            "category": "AI"
+        }
+    ]
+)
 
 print("\n=== SEMANTIC SEARCH ===")
 
@@ -104,9 +114,48 @@ results = collection.query(
 # print("Results:", results)
 # print("Documents:", results["documents"])
 
-for index, document in enumerate(results["documents"][0]):
-    print(f"\nResult {index + 1}:")
-    print("Document:", document)
-    print("Distance:", results["distances"][0][index])
-    print("Metadata:", results["metadatas"][0][index])
+# for index, document in enumerate(results["documents"][0]):
+#     print(f"\nResult {index + 1}:")
+#     print("Document:", document)
+#     print("Distance:", results["distances"][0][index])
+#     print("Metadata:", results["metadatas"][0][index])
 
+
+print("\n=== BUILD CONTEXT ===")
+
+context = "\n".join(results["documents"][0])
+
+print(context)
+
+print("\n=== GENERATION ===")
+
+question = "Công ty nào phát triển mô hình AI mới?"
+
+response = openai_client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {
+            "role": "system",
+            "content": (
+                "Bạn là trợ lý AI. Chỉ trả lời dựa trên Context "
+                "được cung cấp. Nếu Context không có thông tin, "
+                "hãy nói chưa tìm thấy thông tin."
+            )
+        },
+        {
+            "role": "user",
+            "content": f"""
+Context:
+{context}
+
+Question:
+{question}
+"""
+        }
+    ]
+)
+
+answer = response.choices[0].message.content
+
+print("Question:", question)
+print("Answer:", answer)
