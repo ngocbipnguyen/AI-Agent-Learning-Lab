@@ -4,22 +4,39 @@ def chunk_text(
     overlap: int = 20
 ) -> list[str]:
 
+    if chunk_size <= overlap:
+        raise ValueError("chunk_size phải lớn hơn overlap")
+
+    text = text.strip()
     chunks = []
     start = 0
 
     while start < len(text):
-        end = start + chunk_size
+        end = min(start + chunk_size, len(text))
 
         if end < len(text):
-            end = text.rfind(" ", start, end)
+            boundary = text.rfind(" ", start, end)
 
-            if end == -1 or end <= start:
-                end = start + chunk_size
+            if boundary > start:
+                end = boundary
 
         chunk = text[start:end].strip()
-        chunks.append(chunk)
 
-        start = end - overlap
+        if chunk:
+            chunks.append(chunk)
+
+        next_start = end - overlap
+
+        # Không tạo Chunk nếu phần còn lại chỉ là nội dung lặp
+        if next_start >= len(text):
+            break
+
+        remaining = text[next_start:].strip()
+
+        if remaining in chunk:
+            break
+
+        start = next_start
 
     return chunks
 
