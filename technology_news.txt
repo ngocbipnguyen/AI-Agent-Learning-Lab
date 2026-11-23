@@ -1,0 +1,4 @@
+OpenAI phát triển các mô hình trí tuệ nhân tạo mới.
+Google nghiên cứu công nghệ AI phục vụ doanh nghiệp.
+NVIDIA sản xuất GPU phục vụ trung tâm dữ liệu AI.
+Các GPU này hỗ trợ quá trình huấn luyện mô hình AI.
