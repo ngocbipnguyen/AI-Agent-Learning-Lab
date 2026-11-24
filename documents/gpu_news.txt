@@ -2,3 +2,4 @@ NVIDIA sản xuất GPU phục vụ trung tâm dữ liệu AI.
 GPU hỗ trợ quá trình huấn luyện các mô hình trí tuệ nhân tạo.
 NVIDIA tiếp tục phát triển các dòng chip AI mới.
 NVIDIA tiếp tục nghiên cứu các kiến trúc GPU mới để tăng hiệu suất xử lý AI.
+NVIDIA vừa phát triển thế hệ GPU mới dành cho các hệ thống AI.

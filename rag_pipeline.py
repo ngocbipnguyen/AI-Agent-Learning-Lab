@@ -189,13 +189,16 @@ def sync_documents(
 # 4. SEMANTIC SEARCH
 # ============================================================
 
+
 def semantic_search(
     target_collection,
     query: str,
     top_k: int = 4,
-    where: dict | None = None
+    where: dict | None = None,
+    threshold: float | None = None
 ) -> list[dict[str, Any]]:
-    """Tìm chunks gần nghĩa với query bằng vector search."""
+    """Tìm chunks gần nghĩa và lọc theo similarity threshold."""
+
     query_embedding = create_embedding(query)
 
     search_args = {
@@ -209,15 +212,22 @@ def semantic_search(
     response = target_collection.query(**search_args)
 
     results = []
+
     for index, document in enumerate(response["documents"][0]):
+        distance = response["distances"][0][index]
+
+        if threshold is not None and distance > threshold:
+            continue
+
         results.append({
             "text": document,
             "id": response["ids"][0][index],
             "metadata": response["metadatas"][0][index],
-            "distance": response["distances"][0][index]
+            "distance": distance
         })
 
     return results
+
 
 
 # ============================================================
@@ -471,6 +481,7 @@ def delete_document_chunks(target_collection, filename):
         target_collection.delete(ids=chunk_ids)
         print(f"Đã xóa {len(chunk_ids)} chunks của {filename}.")
 
+
 def incremental_sync(target_collection, documents, chunk_size=35, overlap=5):
     old_manifest = load_manifest()
 
@@ -478,18 +489,28 @@ def incremental_sync(target_collection, documents, chunk_size=35, overlap=5):
         documents, old_manifest
     )
 
+    current_files = {document["id"] for document in documents}
+    deleted_files = set(old_manifest.keys()) - current_files
+
     print("\n=== SYNC REPORT ===")
     print("New:", [doc["id"] for doc in new_files])
     print("Changed:", [doc["id"] for doc in changed_files])
     print("Unchanged:", [doc["id"] for doc in unchanged_files])
+    print("Deleted:", list(deleted_files))
 
+    # 1. Xóa chunks của những file đã bị xóa
+    for filename in deleted_files:
+        delete_document_chunks(target_collection, filename)
+        del old_manifest[filename]
+
+    # 2. Chỉ index file mới hoặc file đã thay đổi
     files_to_index = new_files + changed_files
 
     for document in files_to_index:
         filename = document["id"]
 
-        if filename in old_manifest:
-            delete_document_chunks(target_collection, filename)
+        # Xóa chunks cũ trước khi index lại
+        delete_document_chunks(target_collection, filename)
 
         chunk_records = create_chunk_records(
             [document],
@@ -497,13 +518,167 @@ def incremental_sync(target_collection, documents, chunk_size=35, overlap=5):
             overlap=overlap
         )
 
-        index_documents(target_collection, chunk_records)
+        if chunk_records:
+            index_documents(target_collection, chunk_records)
 
         old_manifest[filename] = document["file_hash"]
 
+    # 3. Lưu Manifest
     save_manifest(old_manifest)
 
+    # 4. Lấy toàn bộ chunks hiện có để phục vụ RAG
+    stored_data = target_collection.get(
+        include=["documents", "metadatas"]
+    )
+
+    all_chunk_records = []
+
+    for index, chunk_id in enumerate(stored_data["ids"]):
+        all_chunk_records.append({
+            "id": chunk_id,
+            "text": stored_data["documents"][index],
+            "metadata": stored_data["metadatas"][index]
+        })
+
     print("\nĐồng bộ hoàn tất.")
+    print(f"Tổng số chunks hiện tại: {len(all_chunk_records)}")
+
+    return all_chunk_records
+
+
+
+# EVALUATION_DATASET = [
+#     {
+#         "question": "OpenAI phát triển công nghệ gì?",
+#         "expected_sources": ["ai_news.txt"]
+#     },
+#     {
+#         "question": "NVIDIA sản xuất sản phẩm gì?",
+#         "expected_sources": ["gpu_news.txt"]
+#     },
+#     {
+#         "question": "Google phát triển công nghệ gì?",
+#         "expected_sources": ["google_news.txt"]
+#     }
+# ]
+
+
+EVALUATION_DATASET = [
+    {
+        "question": "OpenAI phát triển công nghệ gì?",
+        "relevant_sources": ["ai_news.txt"]
+    },
+    {
+        "question": "NVIDIA sản xuất sản phẩm gì?",
+        "relevant_sources": ["gpu_news.txt"]
+    },
+    {
+        "question": "Google phát triển công nghệ gì?",
+        "relevant_sources": ["google_news.txt"]
+    }
+]
+
+
+
+def evaluate_retrieval_metrics(
+    collection,
+    evaluation_dataset,
+    top_k=4
+):
+    total_precision = 0
+    total_recall = 0
+    total_f1 = 0
+
+    for item in evaluation_dataset:
+        question = item["question"]
+        relevant_sources = set(item["relevant_sources"])
+
+        results = semantic_search(
+            collection,
+            question,
+            top_k=top_k
+        )
+
+        retrieved_sources = {
+            result["metadata"]["source"]
+            for result in results
+        }
+
+        true_positive = len(
+            relevant_sources & retrieved_sources
+        )
+
+        precision = (
+            true_positive / len(retrieved_sources)
+            if retrieved_sources else 0
+        )
+
+        recall = (
+            true_positive / len(relevant_sources)
+            if relevant_sources else 0
+        )
+
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall else 0
+        )
+
+        total_precision += precision
+        total_recall += recall
+        total_f1 += f1
+
+        print(f"\nQuestion: {question}")
+        print(f"Relevant: {relevant_sources}")
+        print(f"Retrieved: {retrieved_sources}")
+        print(f"Precision: {precision:.2%}")
+        print(f"Recall: {recall:.2%}")
+        print(f"F1-score: {f1:.2%}")
+
+    count = len(evaluation_dataset)
+
+    if count:
+        print("\n=== AVERAGE METRICS ===")
+        print(f"Precision: {total_precision / count:.2%}")
+        print(f"Recall: {total_recall / count:.2%}")
+        print(f"F1-score: {total_f1 / count:.2%}")
+
+
+def evaluate_retrieval(collection, evaluation_dataset, top_k=4):
+    total = len(evaluation_dataset)
+    successful = 0
+
+    for item in evaluation_dataset:
+        question = item["question"]
+        expected_sources = item["expected_sources"]
+
+        results = semantic_search(
+            collection,
+            question,
+            top_k=top_k
+        )
+
+        retrieved_sources = {
+            result["metadata"]["source"]
+            for result in results
+        }
+
+        is_correct = bool(
+            set(expected_sources) & retrieved_sources
+        )
+
+        if is_correct:
+            successful += 1
+
+        print(f"\nQuestion: {question}")
+        print(f"Expected: {expected_sources}")
+        print(f"Retrieved: {list(retrieved_sources)}")
+        print(f"Result: {'PASS' if is_correct else 'FAIL'}")
+
+    accuracy = successful / total if total else 0
+
+    print(f"\nRetrieval Accuracy: {accuracy:.2%}")
+
+
 # ============================================================
 # 11. DEMO
 # ============================================================
@@ -572,16 +747,86 @@ def incremental_sync(target_collection, documents, chunk_size=35, overlap=5):
 #     print("Unchanged files:", [doc["id"] for doc in unchanged_files])
 
 
+# if __name__ == "__main__":
+#     documents = load_txt_directory("documents")
+
+#     manifest = {
+#         document["id"]: document["file_hash"]
+#         for document in documents
+#     }
+
+#     save_manifest(manifest)
+
+#     print("Đã khởi tạo Manifest:")
+#     print(load_manifest())
+
+
 if __name__ == "__main__":
-    documents = load_txt_directory("documents")
+    # 1. Load tài liệu
+    # documents = load_txt_directory("documents")
 
-    manifest = {
-        document["id"]: document["file_hash"]
-        for document in documents
-    }
+    # # 2. Incremental Sync
+    # chunk_records = incremental_sync(
+    #     collection,
+    #     documents,
+    #     chunk_size=35,
+    #     overlap=5
+    # )
 
-    save_manifest(manifest)
+    # # 3. Đặt câu hỏi
+    # question = "NVIDIA sản xuất sản phẩm gì và dùng để làm gì?"
 
-    print("Đã khởi tạo Manifest:")
-    print(load_manifest())
+    # # 4. Chạy RAG Pipeline
+    # answer = rag_pipeline(
+    #     question=question,
+    #     chunk_records=chunk_records,
+    #     top_k=4
+    # )
 
+    # print("\n=== FINAL ANSWER ===")
+    # print(answer)
+    # evaluate_retrieval(
+    # collection=collection,
+    # evaluation_dataset=EVALUATION_DATASET,
+    # top_k=4
+    # )
+
+
+    # evaluate_retrieval_metrics(
+    #     collection=collection,
+    #     evaluation_dataset=EVALUATION_DATASET,
+    #     top_k=4
+    # )
+
+
+
+    # for k in [1, 2, 3, 4]:
+    #     print(f"\n{'=' * 15} TOP K = {k} {'=' * 15}")
+
+    #     evaluate_retrieval_metrics(
+    #         collection=collection,
+    #         evaluation_dataset=EVALUATION_DATASET,
+    #         top_k=k
+    #     )
+
+
+
+    for threshold in [0.3, 0.5, 0.7, 1.0]:
+        print(f"\n{'=' * 15} THRESHOLD = {threshold} {'=' * 15}")
+
+        for item in EVALUATION_DATASET:
+            results = semantic_search(
+                collection,
+                item["question"],
+                top_k=4,
+                threshold=None
+            )
+
+            print(f"\nQuestion: {item['question']}")
+            print(f"Retrieved chunks: {len(results)}")
+
+            for result in results:
+                print(
+                    f"Source: {result['metadata']['source']} | "
+                    f"Distance: {result['distance']:.4f}"
+                )
