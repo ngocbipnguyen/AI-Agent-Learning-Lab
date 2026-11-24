@@ -811,6 +811,7 @@ if __name__ == "__main__":
 
 
 
+    
     for threshold in [0.3, 0.5, 0.7, 1.0]:
         print(f"\n{'=' * 15} THRESHOLD = {threshold} {'=' * 15}")
 
@@ -819,7 +820,7 @@ if __name__ == "__main__":
                 collection,
                 item["question"],
                 top_k=4,
-                threshold=None
+                threshold=threshold
             )
 
             print(f"\nQuestion: {item['question']}")
@@ -830,3 +831,4 @@ if __name__ == "__main__":
                     f"Source: {result['metadata']['source']} | "
                     f"Distance: {result['distance']:.4f}"
                 )
+
