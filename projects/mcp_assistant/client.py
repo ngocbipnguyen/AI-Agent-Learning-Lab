@@ -74,6 +74,53 @@ UTILITY_SERVER_PATH = (
     ROOT_DIR / "projects" / "mcp_assistant"
     / "server" / "utility_server.py"
 )
+# Validate MCP Server files
+for server_path in [NEWS_SERVER_PATH, UTILITY_SERVER_PATH]:
+    if not server_path.is_file():
+        logger.error("MCP Server file not found: %s", server_path)
+        raise FileNotFoundError(
+            f"MCP Server không tồn tại: {server_path}"
+        )
+
+
+
+def validate_tool_arguments(tool_name, arguments):
+    if tool_name == "calculator":
+        required_fields = {"operation", "a", "b"}
+
+        if not required_fields.issubset(arguments):
+            return False, "Thiếu tham số bắt buộc."
+
+        if arguments["operation"] not in {
+            "add", "subtract", "multiply", "divide"
+        }:
+            return False, "Phép tính không hợp lệ."
+
+        if not isinstance(arguments["a"], (int, float)) or isinstance(arguments["a"], bool):
+            return False, "Tham số a phải là số."
+
+        if not isinstance(arguments["b"], (int, float)) or isinstance(arguments["b"], bool):
+            return False, "Tham số b phải là số."
+
+    elif tool_name == "search_news":
+        if "query" not in arguments:
+            return False, "Thiếu tham số query."
+
+        if not isinstance(arguments["query"], str):
+            return False, "query phải là chuỗi."
+
+        if not arguments["query"].strip():
+            return False, "query không được để trống."
+
+        max_results = arguments.get("max_results", 5)
+
+        if not isinstance(max_results, int) or isinstance(max_results, bool):
+            return False, "max_results phải là số nguyên."
+
+        if not 1 <= max_results <= 20:
+            return False, "max_results phải từ 1 đến 20."
+
+    return True, None
 
 
 async def main():
@@ -244,9 +291,42 @@ async def main():
 
                             tool_name = tool_call.function.name
 
-                            arguments = json.loads(
-                                tool_call.function.arguments
+                            try:
+                                arguments = json.loads(tool_call.function.arguments)
+
+                                if not isinstance(arguments, dict):
+                                    raise ValueError("Tool arguments must be a JSON object")
+
+                            except (json.JSONDecodeError, ValueError):
+                                logger.exception("Invalid Tool arguments: %s", tool_name)
+
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": "Lỗi: Tham số Tool không hợp lệ. Vui lòng thử lại."
+                                })
+
+                                continue
+
+                            is_valid, error_message = validate_tool_arguments(
+                                tool_name,
+                                arguments
                             )
+
+                            if not is_valid:
+                                logger.warning(
+                                    "Invalid arguments for %s: %s",
+                                    tool_name,
+                                    error_message
+                                )
+
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Tool input validation error: {error_message}"
+                                })
+
+                                continue
 
                             print(f"\nLLM yêu cầu gọi Tool: {tool_name}")
                             print(f"Arguments: {arguments}")
@@ -259,6 +339,10 @@ async def main():
 
                             # Find the correct MCP Client
                             session = tool_sessions.get(tool_name)
+                            logger.info(
+                                "Calling MCP Server for tool: %s",
+                                tool_name
+                            )
 
                             if session is None:
                                 result_text = (
