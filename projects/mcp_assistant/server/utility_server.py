@@ -1,39 +1,29 @@
-
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
+from typing import Literal
 
-
-# Initialize Utility MCP Server
 mcp = FastMCP("Utility Server")
 
 
 @mcp.tool()
-def calculator(operation: str, a: float, b: float) -> str:
+def calculator(
+    operation: Literal["add", "subtract", "multiply", "divide"],
+    a: float,
+    b: float
+) -> str:
     """
     Thực hiện phép tính cộng, trừ, nhân, chia.
-
-    operation chỉ nhận:
-    - add
-    - subtract
-    - multiply
-    - divide
     """
-
     if operation == "add":
         result = a + b
-
     elif operation == "subtract":
         result = a - b
-
     elif operation == "multiply":
         result = a * b
-
     elif operation == "divide":
-
         if b == 0:
             return "Lỗi: Không thể chia cho 0."
-
         result = a / b
-
     else:
         return "Lỗi: Phép tính không hợp lệ."
 

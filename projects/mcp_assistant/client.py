@@ -12,7 +12,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 import logging
 from logging.handlers import RotatingFileHandler
-
+from jsonschema import validate, ValidationError
 
 # Load environment variables
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -84,43 +84,84 @@ for server_path in [NEWS_SERVER_PATH, UTILITY_SERVER_PATH]:
 
 
 
-def validate_tool_arguments(tool_name, arguments):
-    if tool_name == "calculator":
-        required_fields = {"operation", "a", "b"}
+# def validate_tool_arguments(tool_name, arguments):
+#     if tool_name == "calculator":
+#         required_fields = {"operation", "a", "b"}
 
-        if not required_fields.issubset(arguments):
-            return False, "Thiếu tham số bắt buộc."
+#         if not required_fields.issubset(arguments):
+#             return False, "Thiếu tham số bắt buộc."
 
-        if arguments["operation"] not in {
-            "add", "subtract", "multiply", "divide"
-        }:
-            return False, "Phép tính không hợp lệ."
+#         if arguments["operation"] not in {
+#             "add", "subtract", "multiply", "divide"
+#         }:
+#             return False, "Phép tính không hợp lệ."
 
-        if not isinstance(arguments["a"], (int, float)) or isinstance(arguments["a"], bool):
-            return False, "Tham số a phải là số."
+#         if not isinstance(arguments["a"], (int, float)) or isinstance(arguments["a"], bool):
+#             return False, "Tham số a phải là số."
 
-        if not isinstance(arguments["b"], (int, float)) or isinstance(arguments["b"], bool):
-            return False, "Tham số b phải là số."
+#         if not isinstance(arguments["b"], (int, float)) or isinstance(arguments["b"], bool):
+#             return False, "Tham số b phải là số."
 
-    elif tool_name == "search_news":
-        if "query" not in arguments:
-            return False, "Thiếu tham số query."
+#     elif tool_name == "search_news":
+#         if "query" not in arguments:
+#             return False, "Thiếu tham số query."
 
-        if not isinstance(arguments["query"], str):
-            return False, "query phải là chuỗi."
+#         if not isinstance(arguments["query"], str):
+#             return False, "query phải là chuỗi."
 
-        if not arguments["query"].strip():
-            return False, "query không được để trống."
+#         if not arguments["query"].strip():
+#             return False, "query không được để trống."
 
-        max_results = arguments.get("max_results", 5)
+#         max_results = arguments.get("max_results", 5)
 
-        if not isinstance(max_results, int) or isinstance(max_results, bool):
-            return False, "max_results phải là số nguyên."
+#         if not isinstance(max_results, int) or isinstance(max_results, bool):
+#             return False, "max_results phải là số nguyên."
 
-        if not 1 <= max_results <= 20:
-            return False, "max_results phải từ 1 đến 20."
+#         if not 1 <= max_results <= 20:
+#             return False, "max_results phải từ 1 đến 20."
 
-    return True, None
+#     return True, None
+
+
+def validate_tool_arguments(arguments, schema):
+    try:
+        validate(
+            instance=arguments,
+            schema=schema
+        )
+        return True, None
+
+    except ValidationError as error:
+        return False, error.message
+
+test_arguments = {
+    "operation": "multiply",
+    "a": 125,
+    "b": 8,
+    "discount": 10
+}
+
+test_schema = {
+    "type": "object",
+    "properties": {
+        "operation": {
+            "type": "string",
+            "enum": ["add", "subtract", "multiply", "divide"]
+        },
+        "a": {"type": "number"},
+        "b": {"type": "number"}
+    },
+    "required": ["operation", "a", "b"],
+    "additionalProperties": False
+}
+
+is_valid, error_message = validate_tool_arguments(
+    test_arguments, test_schema
+)
+
+print("\n=== ADDITIONAL PROPERTIES TEST ===")
+print("Valid:", is_valid)
+print("Error:", error_message)
 
 
 async def main():
@@ -175,6 +216,38 @@ async def main():
                     # Collect tools from both servers
                     news_tools = await news_session.list_tools()
                     utility_tools = await utility_session.list_tools()
+
+                    for tool in utility_tools.tools:
+                        if tool.name == "calculator":
+                            print("\n=== UPDATED CALCULATOR SCHEMA ===")
+                            print(
+                                json.dumps(
+                                    tool.inputSchema,
+                                    indent=2,
+                                    ensure_ascii=False
+                                )
+                            )
+                    # print("\n=== TOOL INPUT SCHEMAS ===")
+
+                    # for tool in news_tools.tools:
+                    #     print(f"\nTool: {tool.name}")
+                    #     print(json.dumps(tool.inputSchema, indent=2, ensure_ascii=False))
+
+                    # for tool in utility_tools.tools:
+                    #     print(f"\nTool: {tool.name}")
+                    #     print(json.dumps(tool.inputSchema, indent=2, ensure_ascii=False))
+
+                    tool_schemas = {}
+
+                    for tool in news_tools.tools:
+                        tool_schemas[tool.name] = tool.inputSchema
+
+                    for tool in utility_tools.tools:
+                        tool_schemas[tool.name] = tool.inputSchema
+
+                    for schema in tool_schemas.values():
+                        if schema.get("type") == "object":
+                            schema["additionalProperties"] = False
 
                     # Map tool names to their sessions
                     tool_sessions = {}
@@ -291,6 +364,16 @@ async def main():
 
                             tool_name = tool_call.function.name
 
+                            if tool_name not in tool_sessions:
+                                logger.error("Unknown Tool requested: %s", tool_name)
+
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Tool không tồn tại: {tool_name}"
+                                })
+                                continue
+
                             try:
                                 arguments = json.loads(tool_call.function.arguments)
 
@@ -308,9 +391,19 @@ async def main():
 
                                 continue
 
+                            schema = tool_schemas.get(tool_name)
+
+                            if schema is None:
+                                logger.error("Schema not found for Tool: %s", tool_name)
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Không tìm thấy Schema cho Tool: {tool_name}"
+                                })
+                                continue
+
                             is_valid, error_message = validate_tool_arguments(
-                                tool_name,
-                                arguments
+                                arguments, schema
                             )
 
                             if not is_valid:
@@ -355,6 +448,8 @@ async def main():
                                         tool_name,
                                         arguments=arguments,
                                     )
+
+                                    # Xử lý kết quả khi Tool chạy thành công
 
                                 except Exception:
                                     logger.exception(
