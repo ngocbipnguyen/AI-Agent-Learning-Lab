@@ -1,7 +1,7 @@
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 from typing import Literal
-
+from mcp.server.fastmcp.exceptions import ToolError
 mcp = FastMCP("Utility Server")
 
 
@@ -22,7 +22,7 @@ def calculator(
         result = a * b
     elif operation == "divide":
         if b == 0:
-            return "Lỗi: Không thể chia cho 0."
+            raise ToolError("Không thể chia cho 0.")
         result = a / b
     else:
         return "Lỗi: Phép tính không hợp lệ."

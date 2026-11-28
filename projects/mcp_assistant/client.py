@@ -443,13 +443,12 @@ async def main():
                                 )
 
                             else:
+                                    
                                 try:
                                     tool_result = await session.call_tool(
                                         tool_name,
                                         arguments=arguments,
                                     )
-
-                                    # Xử lý kết quả khi Tool chạy thành công
 
                                 except Exception:
                                     logger.exception(
@@ -470,38 +469,22 @@ async def main():
                                     )
 
                                     if tool_result.isError:
-                                        logger.error("Tool returned an error: %s", tool_name)
+                                        logger.error(
+                                            "Tool returned an error: %s",
+                                            tool_name
+                                        )
                                         result_text = f"Tool execution error: {result_text}"
                                     else:
-                                        logger.info("Tool executed successfully: %s", tool_name)
+                                        logger.info(
+                                            "Tool executed successfully: %s",
+                                            tool_name
+                                        )
 
-                                result_text = "\n".join(
-                                    content.text
-                                    for content in tool_result.content
-                                    if hasattr(content, "text")
-                                )
-
-                                if tool_result.isError:
-                                    result_text = (
-                                        f"Tool execution error: "
-                                        f"{result_text}"
-                                    )
-                                    logger.error(
-                                        "Tool execution failed: %s",
-                                        tool_name
-                                    )
-                                else:
-                                    logger.info(
-                                        "Tool executed successfully: %s",
-                                        tool_name
-                                    )
-
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": result_text,
-                            })
-
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": result_text,
+                                })
                     else:
                         print(
                             "\nAgent đã đạt giới hạn "
